@@ -231,7 +231,7 @@
         let missileFireInterval = 300;
 
         // ========== 陨石系统核心变量 ==========
-        const meteorMinCount = 30;
+        const meteorMinCount = 50;
         const meteorMaxCount = 200;
         const meteorMinSpeed = 5;
         const meteorMaxSpeed = 20;
@@ -348,7 +348,7 @@
             playerX = gameContainer.clientWidth / 2 - playerWidth / 2;
             player.style.left = `${playerX}px`;
             player.style.top = `${playerY}px`;
-            
+            window.autoFire=false;
             showTalentPanel();
         }
 
@@ -407,6 +407,7 @@
             window.splitCount = 2;
             window.shieldCount = 0;
             window.meteorSpawnDelay = 0;
+            window.autoFire = false;
             
             for (let key in keys) {
                 keys[key] = false;
@@ -540,7 +541,7 @@
             document.getElementById('max-missile').textContent = maxMissile;
         }
 
-        // 生成陨石：随游戏时间调整数量、速度、血量
+        // 生成陨石：【核心修改】70%概率在玩家周围生成
         function spawnMeteor() {
             if (!gameRunning) return;
             const params = getMeteorParams();
@@ -551,7 +552,21 @@
             const meteor = document.createElement('div');
             meteor.className = 'meteor';
             meteor.textContent = meteorChar;
-            const meteorX = Math.random() * (gameContainer.clientWidth - 60);
+            
+            // --- 核心修改开始：让陨石更多在玩家周围生成 ---
+            let meteorX;
+            if (Math.random() < 0.7) {
+                // 70%的概率在玩家左右150像素范围内生成
+                const offset = (Math.random() - 0.5) * 300; // 偏移范围：-150 到 150
+                meteorX = playerX + offset;
+                // 确保不超出屏幕边界
+                meteorX = Math.max(0, Math.min(gameContainer.clientWidth - 60, meteorX));
+            } else {
+                // 30%的概率在整个屏幕随机生成
+                meteorX = Math.random() * (gameContainer.clientWidth - 60);
+            }
+            // --- 核心修改结束 ---
+
             const meteorY = -60;
             meteor.style.left = `${meteorX}px`;
             meteor.style.top = `${meteorY}px`;
@@ -638,7 +653,7 @@
             
             const missile = document.createElement('div');
             missile.className = 'missile';
-            missile.textContent = '▓';
+            missile.textContent = '☢';
             missile.style.left = `${missileX}px`;
             missile.style.top = `${missileY}px`;
             
