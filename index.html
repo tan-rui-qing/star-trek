@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>star-trek</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Consolas", monospace;
+        }
+
+        body {
+            background: linear-gradient(to bottom, #eee, #000);
+            background-size: 100% 200%;
+            animation: bgFade 3s ease-in-out forwards;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        @keyframes bgFade {
+            0% { background-position: 0% 0%; }
+            100% { background-position: 0% 100%; }
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            border: 1px solid #333;
+            transform: translateZ(0); /* 硬件加速 */
+            will-change: transform;
+        }
+
+        #player {
+            position: absolute;
+            font-size: 24px;
+            font-weight: bold;
+            z-index: 100;
+            user-select: none;
+            transform: translateZ(0);
+        }
+
+        .bullet {
+            position: absolute;
+            color: #fff;
+            font-size: 18px;
+            user-select: none;
+            z-index: 50;
+            transform: translateZ(0);
+        }
+
+        .missile {
+            position: absolute;
+            color: #0f0;
+            font-size: 20px;
+            user-select: none;
+            z-index: 50;
+            transform: translateZ(0);
+        }
+
+        .meteor {
+            position: absolute;
+            font-size: 40px; /* 陨石尺寸大于飞船 */
+            font-weight: bold;
+            user-select: none;
+            z-index: 40;
+            animation: spin 2s linear infinite;
+            transform: translateZ(0);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 18px;
+            z-index: 200;
+            background: rgba(0,0,0,0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        #talent-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #fff;
+            padding: 20px;
+            z-index: 300;
+            text-align: center;
+            display: none;
+        }
+
+        .talent-btn {
+            display: block;
+            width: 280px;
+            padding: 12px;
+            margin: 12px auto;
+            background: #222;
+            color: #fff;
+            border: 1px solid #fff;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .talent-btn:hover {
+            background: #444;
+        }
+
+        #game-over-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #fff;
+            padding: 30px;
+            z-index: 300;
+            text-align: center;
+            display: none;
+        }
+
+        #restart-btn {
+            padding: 10px 20px;
+            margin-top: 20px;
+            background: #222;
+            color: #fff;
+            border: 1px solid #fff;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        #restart-btn:hover {
+            background: #444;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <!-- 玩家飞船 -->
+        <div id="player">A</div>
+        
+        <!-- 信息面板：新增子弹/弹夹/导弹显示 -->
+        <div id="info-panel">
+            玩家：<span id="player-name">未知</span><br>
+            当前距离：<span id="current-distance">0</span> 米<br>
+            最高距离：<span id="max-distance">0</span> 米<br>
+            子弹：<span id="current-ammo">50</span>/<span id="max-ammo">50</span><br>
+            导弹：<span id="current-missile">3</span>/<span id="max-missile">3</span>
+        </div>
+
+        <!-- 天赋选择面板 -->
+        <div id="talent-panel">
+            <h2>选择你的天赋（3选1）</h2>
+            <button class="talent-btn" id="talent1"></button>
+            <button class="talent-btn" id="talent2"></button>
+            <button class="talent-btn" id="talent3"></button>
+        </div>
+
+        <!-- 游戏结束面板 -->
+        <div id="game-over-panel">
+            <h2>游戏结束！</h2>
+            <p>玩家：<span id="go-name">未知</span></p>
+            <p>本次飞行距离：<span id="go-distance">0</span> 米</p>
+            <p>历史最高：<span id="go-max-distance">0</span> 米</p>
+            <p>已选天赋：<span id="go-talents">无</span></p>
+            <button id="restart-btn">重新开始</button>
+        </div>
+    </div>
+
+    <script>
+        // ========== 核心变量定义 ==========
+        const gameContainer = document.getElementById('game-container');
+        const player = document.getElementById('player');
+        const talentPanel = document.getElementById('talent-panel');
+        const gameOverPanel = document.getElementById('game-over-panel');
+        const restartBtn = document.getElementById('restart-btn');
+
+        // 玩家相关
+        let playerName = '';
+        let playerX = gameContainer.clientWidth / 2 - 12;
+        const playerY = gameContainer.clientHeight - 60;
+        let playerSpeed = 30; // 玩家飞机速度改为30
+        let playerWidth = 24;
+        let playerHeight = 24;
+
+        // 键盘状态记录（解决移动卡顿）
+        const keys = {
+            ArrowLeft: false,
+            ArrowRight: false,
+            a: false,
+            d: false
+        };
+        let isFiring = false; // 记录是否在开枪
+        let isFiringMissile = false; // 记录是否在发射导弹
+
+        // 游戏状态
+        let gameRunning = false;
+        let currentDistance = 0;
+        let maxDistance = localStorage.getItem('planeGameMaxDistance') || 0;
+        let distanceTimer = null;
+        let meteorTimer = null;
+        let moveTimer = null;
+        let reloadTimer = null; // 装弹定时器
+        let missileReloadTimer = null; // 导弹装弹定时器
+        let fireCD = false;
+        let fireInterval = 300;
+        let gameTime = 0; // 游戏时间（毫秒）
+
+        // ========== 弹夹系统核心变量 ==========
+        let maxAmmo = 50; // 初始弹夹容量改为50
+        let currentAmmo = 50; // 当前子弹数
+        let reloadTime = 1000; // 初始装弹冷却改为1秒/发
+
+        // ========== 导弹系统核心变量 ==========
+        let missiles = [];
+        let currentMissile = 3; // 初始导弹槽位3发
+        let maxMissile = 3; // 最大导弹槽位
+        let missileReloadTime = 5000; // 导弹恢复冷却5秒/发
+        let missileFireCD = false;
+        let missileFireInterval = 300;
+
+        // ========== 陨石系统核心变量 ==========
+        const meteorMinCount = 20;
+        const meteorMaxCount = 200;
+        const meteorMinSpeed = 20;
+        const meteorMaxSpeed = 100;
+        const meteorMinHp = 1;
+        const meteorMaxHp = 10;
+
+        // 子弹/陨石数组
+        let bullets = [];
+        let meteors = [];
+
+        // ========== 天赋系统（支持累加） ==========
+        const talentList = [
+            { id: 1, name: "双倍射速", desc: "开火间隔减半（可累加）", effect: () => { fireInterval = Math.max(50, fireInterval / 2); } },
+            { id: 2, name: "双发子弹", desc: "每次开火发射2束子弹（仅耗1槽）", effect: () => { window.doubleBullet = true; } },
+            { id: 3, name: "移动加速", desc: "飞船移动速度+5（可累加）", effect: () => { playerSpeed += 5; } },
+            { id: 4, name: "护盾", desc: "抵挡1次陨石撞击（可累加）", effect: () => { window.shieldCount = (window.shieldCount || 0) + 1; } },
+            { id: 5, name: "子弹穿透", desc: "子弹可击中多个陨石（可累加，上限+2）", effect: () => { 
+                window.bulletPenetrate = true;
+                window.penetrateMax = (window.penetrateMax || 3) + 2;
+            } },
+            { id: 6, name: "陨石减速", desc: "所有陨石速度-3（可累加）", effect: () => { window.meteorSpeedReduce = (window.meteorSpeedReduce || 0) + 3; } },
+            { id: 7, name: "双倍距离", desc: "每秒增加的距离翻倍（可累加）", effect: () => { 
+                window.doubleDistanceCount = (window.doubleDistanceCount || 0) + 1;
+            } },
+            { id: 8, name: "爆炸子弹", desc: "击中陨石时销毁周围陨石（范围+20）", effect: () => { 
+                window.explodeBullet = true;
+                window.explodeRange = (window.explodeRange || 50) + 20;
+            } },
+            { id: 9, name: "自动开火", desc: "无需按空格自动开火", effect: () => { window.autoFire = true; } },
+            { id: 10, name: "子弹加速", desc: "子弹飞行速度+6（可累加）", effect: () => { window.bulletSpeed = (window.bulletSpeed || 10) + 6; } },
+            { id: 11, name: "玩家变大", desc: "飞船体积变大，移动+3（可累加）", effect: () => { 
+                player.style.fontSize = `${parseInt(player.style.fontSize || 24) + 6}px`; 
+                playerSpeed += 3; 
+                playerWidth += 6; 
+                playerHeight += 6; 
+            } },
+            { id: 12, name: "陨石变少", desc: "陨石生成间隔+50ms（可累加）", effect: () => { 
+                window.meteorSpawnDelay = (window.meteorSpawnDelay || 0) + 50;
+                resetMeteorTimer();
+            } },
+            { id: 13, name: "临时无敌", desc: "5秒内免疫所有伤害（可累加时长）", effect: () => { 
+                window.invincible = true; 
+                const currentInvincibleTime = (window.invincibleTimer || 5000) + 5000;
+                clearTimeout(window.invincibleTimeout);
+                window.invincibleTimeout = setTimeout(() => { window.invincible = false; }, currentInvincibleTime);
+            } },
+            { id: 14, name: "分数翻倍", desc: "当前距离直接翻倍（可累加）", effect: () => { currentDistance = Math.floor(currentDistance * 2); updateInfoPanel(); } },
+            { id: 15, name: "反向陨石", desc: "反向陨石概率+10%（可累加）", effect: () => { window.reverseMeteorRate = (window.reverseMeteorRate || 0.3) + 0.1; } },
+            { id: 16, name: "子弹追踪", desc: "追踪速度+1（可累加）", effect: () => { 
+                window.bulletTrack = true;
+                window.trackSpeed = (window.trackSpeed || 1) + 1;
+            } },
+            { id: 17, name: "护盾再生", desc: "护盾再生间隔-200米（可累加）", effect: () => { 
+                window.shieldRegen = true;
+                window.shieldRegenStep = (window.shieldRegenStep || 1000) - 200;
+            } },
+            { id: 18, name: "陨石分裂", desc: "分裂陨石数量+1（可累加）", effect: () => { 
+                window.meteorSplit = true;
+                window.splitCount = (window.splitCount || 2) + 1;
+            } },
+            { id: 19, name: "扩充弹夹", desc: "弹夹容量+50（可累加）", effect: () => { 
+                maxAmmo = maxAmmo + 50;
+                currentAmmo = Math.min(maxAmmo, currentAmmo + 50);
+                updateInfoPanel();
+            } },
+            { id: 20, name: "快速装弹", desc: "装弹冷却-0.25秒（最低0.5秒，可累加）", effect: () => { 
+                reloadTime = Math.max(500, reloadTime - 250);
+                if (reloadTimer) clearInterval(reloadTimer);
+                startReloadTimer();
+            } },
+            { id: 21, name: "快速导弹冷却", desc: "导弹恢复冷却-1秒（最低1秒，可累加）", effect: () => { 
+                missileReloadTime = Math.max(1000, missileReloadTime - 1000);
+                if (missileReloadTimer) clearInterval(missileReloadTimer);
+                startMissileReloadTimer();
+            } },
+            { id: 22, name: "扩充导弹槽位", desc: "导弹槽位+1（最多5，可累加）", effect: () => { 
+                maxMissile = Math.min(5, maxMissile + 1);
+                currentMissile = Math.min(maxMissile, currentMissile + 1);
+                updateInfoPanel();
+            } }
+        ];
+        let selectedTalents = [];
+
+        // 天赋效果全局变量（初始值）
+        window.doubleBullet = false;
+        window.tripleBullet = false;
+        window.bulletPenetrate = false;
+        window.penetrateMax = 3;
+        window.meteorSpeedReduce = 0;
+        window.doubleDistanceCount = 0;
+        window.explodeBullet = false;
+        window.explodeRange = 50;
+        window.autoFire = false;
+        window.bulletSpeed = 10;
+        window.invincible = false;
+        window.reverseMeteorRate = 0.3;
+        window.bulletTrack = false;
+        window.trackSpeed = 1;
+        window.shieldRegen = false;
+        window.shieldRegenStep = 1000;
+        window.meteorSplit = false;
+        window.splitCount = 2;
+        window.shieldCount = 0;
+        window.meteorSpawnDelay = 0;
+
+        // ========== 初始化函数 ==========
+        function initGame() {
+            resetGameState();
+            
+            playerName = prompt("请输入你的名字：", "飞行员");
+            if (!playerName) playerName = "匿名玩家";
+            document.getElementById('player-name').textContent = playerName;
+            
+            playerX = gameContainer.clientWidth / 2 - playerWidth / 2;
+            player.style.left = `${playerX}px`;
+            player.style.top = `${playerY}px`;
+            
+            showTalentPanel();
+        }
+
+        // 重置游戏状态
+        function resetGameState() {
+            clearInterval(distanceTimer);
+            clearInterval(meteorTimer);
+            clearInterval(moveTimer);
+            clearInterval(reloadTimer);
+            clearInterval(missileReloadTimer);
+            clearTimeout(window.invincibleTimeout);
+            
+            bullets.forEach(bullet => gameContainer.removeChild(bullet.element));
+            missiles.forEach(missile => gameContainer.removeChild(missile.element));
+            meteors.forEach(meteor => gameContainer.removeChild(meteor.element));
+            bullets = [];
+            missiles = [];
+            meteors = [];
+            
+            currentDistance = 0;
+            gameTime = 0;
+            gameRunning = false;
+            fireCD = false;
+            missileFireCD = false;
+            fireInterval = 300;
+            playerSpeed = 30;
+            selectedTalents = [];
+            isFiring = false;
+            isFiringMissile = false;
+            
+            maxAmmo = 50;
+            currentAmmo = 50;
+            reloadTime = 1000;
+            
+            currentMissile = 3;
+            maxMissile = 3;
+            missileReloadTime = 5000;
+            
+            window.doubleBullet = false;
+            window.tripleBullet = false;
+            window.bulletPenetrate = false;
+            window.penetrateMax = 3;
+            window.meteorSpeedReduce = 0;
+            window.doubleDistanceCount = 0;
+            window.explodeBullet = false;
+            window.explodeRange = 50;
+            window.autoFire = false;
+            window.bulletSpeed = 10;
+            window.invincible = false;
+            window.reverseMeteorRate = 0.3;
+            window.bulletTrack = false;
+            window.trackSpeed = 1;
+            window.shieldRegen = false;
+            window.shieldRegenStep = 1000;
+            window.meteorSplit = false;
+            window.splitCount = 2;
+            window.shieldCount = 0;
+            window.meteorSpawnDelay = 0;
+            
+            for (let key in keys) {
+                keys[key] = false;
+            }
+            
+            player.style.fontSize = "24px";
+            playerWidth = 24;
+            playerHeight = 24;
+            talentPanel.style.display = "none";
+            gameOverPanel.style.display = "none";
+            updateInfoPanel();
+        }
+
+        // ========== 天赋系统（支持累加） ==========
+        function showTalentPanel() {
+            const shuffledTalents = [...talentList].sort(() => Math.random() - 0.5).slice(0, 3);
+            
+            document.getElementById('talent1').textContent = `${shuffledTalents[0].name}：${shuffledTalents[0].desc}`;
+            document.getElementById('talent2').textContent = `${shuffledTalents[1].name}：${shuffledTalents[1].desc}`;
+            document.getElementById('talent3').textContent = `${shuffledTalents[2].name}：${shuffledTalents[2].desc}`;
+            
+            document.getElementById('talent1').onclick = () => selectTalent(shuffledTalents[0]);
+            document.getElementById('talent2').onclick = () => selectTalent(shuffledTalents[1]);
+            document.getElementById('talent3').onclick = () => selectTalent(shuffledTalents[2]);
+            
+            talentPanel.style.display = "block";
+        }
+
+        function selectTalent(talent) {
+            selectedTalents.push(talent.name);
+            talent.effect();
+            talentPanel.style.display = "none";
+            if (!gameRunning) {
+                startGame();
+            }
+        }
+
+        // ========== 装弹定时器（仅未开枪时恢复） ==========
+        function startReloadTimer() {
+            reloadTimer = setInterval(() => {
+                if (gameRunning && currentAmmo < maxAmmo && !isFiring) {
+                    currentAmmo += 1;
+                    updateInfoPanel();
+                }
+            }, reloadTime);
+        }
+
+        // ========== 导弹装弹定时器（仅未发射时恢复） ==========
+        function startMissileReloadTimer() {
+            missileReloadTimer = setInterval(() => {
+                if (gameRunning && currentMissile < maxMissile && !isFiringMissile) {
+                    currentMissile += 1;
+                    updateInfoPanel();
+                }
+            }, missileReloadTime);
+        }
+
+        // ========== 重置陨石定时器（适配天赋累加） ==========
+        function resetMeteorTimer() {
+            clearInterval(meteorTimer);
+            const finalSpawnRate = 250 + window.meteorSpawnDelay;
+            meteorTimer = setInterval(spawnMeteor, finalSpawnRate);
+        }
+
+        // ========== 获取陨石参数（随游戏时间变化） ==========
+        function getMeteorParams() {
+            const seconds = gameTime / 1000;
+            return {
+                count: Math.min(meteorMaxCount, Math.floor(meteorMinCount + seconds / 2)),
+                speed: Math.min(meteorMaxSpeed, Math.floor(meteorMinSpeed + seconds / 5)),
+                hp: Math.min(meteorMaxHp, Math.floor(meteorMinHp + seconds / 30))
+            };
+        }
+
+        // ========== 游戏核心逻辑 ==========
+        function startGame() {
+            gameRunning = true;
+            
+            distanceTimer = setInterval(() => {
+                gameTime += 1000;
+                const distanceMulti = Math.pow(2, window.doubleDistanceCount);
+                currentDistance += 50 * distanceMulti;
+                
+                if (currentDistance % 500 === 0 && currentDistance > 0) {
+                    pauseGame();
+                    showTalentPanel();
+                }
+                
+                if (window.shieldRegen && currentDistance % window.shieldRegenStep === 0 && currentDistance > 0) {
+                    window.shieldCount += 1;
+                }
+                
+                updateInfoPanel();
+            }, 1000);
+            
+            resetMeteorTimer();
+            
+            moveTimer = setInterval(() => {
+                moveObjects();
+                handlePlayerMove();
+            }, 10);
+            
+            startReloadTimer();
+            startMissileReloadTimer();
+            
+            if (window.autoFire) {
+                setInterval(() => {
+                    if (gameRunning && !fireCD && currentAmmo > 0) {
+                        fire();
+                    }
+                }, fireInterval);
+            }
+        }
+
+        function pauseGame() {
+            gameRunning = false;
+            clearInterval(distanceTimer);
+            clearInterval(meteorTimer);
+            clearInterval(moveTimer);
+            clearInterval(reloadTimer);
+            clearInterval(missileReloadTimer);
+        }
+
+        // 更新信息面板
+        function updateInfoPanel() {
+            document.getElementById('current-distance').textContent = currentDistance;
+            document.getElementById('max-distance').textContent = maxDistance;
+            document.getElementById('current-ammo').textContent = currentAmmo;
+            document.getElementById('max-ammo').textContent = maxAmmo;
+            document.getElementById('current-missile').textContent = currentMissile;
+            document.getElementById('max-missile').textContent = maxMissile;
+        }
+
+        // 生成陨石：随游戏时间调整数量、速度、血量
+        function spawnMeteor() {
+            if (!gameRunning) return;
+            const params = getMeteorParams();
+            if (meteors.length >= params.count) return;
+            
+            const charCode = Math.floor(Math.random() * 26) + 65;
+            const meteorChar = String.fromCharCode(charCode);
+            const meteor = document.createElement('div');
+            meteor.className = 'meteor';
+            meteor.textContent = meteorChar;
+            const meteorX = Math.random() * (gameContainer.clientWidth - 60);
+            const meteorY = -60;
+            meteor.style.left = `${meteorX}px`;
+            meteor.style.top = `${meteorY}px`;
+            const size = Math.floor(Math.random() * 20) + 40;
+            meteor.style.fontSize = `${size}px`;
+            
+            let speed = params.speed * (0.8 + Math.random() * 0.4) - window.meteorSpeedReduce;
+            speed = Math.max(meteorMinSpeed, Math.min(meteorMaxSpeed, speed));
+            
+            if (Math.random() < window.reverseMeteorRate) {
+                speed = -speed;
+            }
+            
+            meteors.push({
+                element: meteor,
+                x: meteorX,
+                y: meteorY,
+                speed: speed,
+                width: size,
+                height: size,
+                hp: params.hp,
+                maxHp: params.hp
+            });
+            
+            gameContainer.appendChild(meteor);
+        }
+
+        // 开火逻辑：双倍/三倍累加，最多10发
+        function fire() {
+            if (fireCD || !gameRunning || currentAmmo <= 0) return;
+            
+            fireCD = true;
+            setTimeout(() => {
+                fireCD = false;
+            }, fireInterval);
+            
+            currentAmmo = Math.max(0, currentAmmo - 1);
+            updateInfoPanel();
+            
+            const baseX = playerX + playerWidth / 2 - 2;
+            const baseY = playerY - 20;
+            
+            let bulletCount = 1;
+            if (window.doubleBullet) bulletCount *= 2;
+            if (window.tripleBullet) bulletCount *= 3;
+            bulletCount = Math.min(bulletCount, 10); // 最多10发
+            
+            for (let i = 0; i < bulletCount; i++) {
+                const offsetX = (i - (bulletCount - 1) / 2) * 10;
+                const bulletX = baseX + offsetX;
+                
+                const bullet = document.createElement('div');
+                bullet.className = 'bullet';
+                bullet.textContent = '|';
+                bullet.style.left = `${bulletX}px`;
+                bullet.style.top = `${baseY}px`;
+                
+                bullets.push({
+                    element: bullet,
+                    x: bulletX,
+                    y: baseY,
+                    speed: window.bulletSpeed
+                });
+                
+                gameContainer.appendChild(bullet);
+            }
+        }
+
+        // 发射导弹逻辑
+        function fireMissile() {
+            if (missileFireCD || !gameRunning || currentMissile <= 0) return;
+            
+            missileFireCD = true;
+            setTimeout(() => {
+                missileFireCD = false;
+            }, missileFireInterval);
+            
+            currentMissile = Math.max(0, currentMissile - 1);
+            updateInfoPanel();
+            
+            const side = Math.random() > 0.5 ? 1 : -1;
+            const missileX = playerX + playerWidth / 2;
+            const missileY = playerY + playerHeight / 2;
+            
+            const missile = document.createElement('div');
+            missile.className = 'missile';
+            missile.textContent = '▶';
+            missile.style.left = `${missileX}px`;
+            missile.style.top = `${missileY}px`;
+            
+            missiles.push({
+                element: missile,
+                x: missileX,
+                y: missileY,
+                side: side,
+                state: 'idle',
+                idleTime: 300,
+                speed: 0,
+                maxSpeed: 10,
+                damage: 11
+            });
+            
+            gameContainer.appendChild(missile);
+        }
+
+        function moveObjects() {
+            if (!gameRunning) return;
+            
+            // 移动子弹
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                bullet.y -= bullet.speed;
+                bullet.element.style.top = `${bullet.y}px`;
+                
+                if (window.bulletTrack && meteors.length > 0) {
+                    let closestMeteor = meteors[0];
+                    let minDistance = Infinity;
+                    meteors.forEach(meteor => {
+                        const dx = meteor.x - bullet.x;
+                        const dy = meteor.y - bullet.y;
+                        const distance = Math.sqrt(dx*dx + dy*dy);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestMeteor = meteor;
+                        }
+                    });
+                    if (bullet.x < closestMeteor.x) bullet.x += window.trackSpeed;
+                    else if (bullet.x > closestMeteor.x) bullet.x -= window.trackSpeed;
+                    bullet.element.style.left = `${bullet.x}px`;
+                }
+                
+                if (bullet.y < -20) {
+                    gameContainer.removeChild(bullet.element);
+                    bullets.splice(i, 1);
+                    continue;
+                }
+                
+                checkBulletCollision(i);
+            }
+
+            // 移动导弹
+            for (let i = missiles.length - 1; i >= 0; i--) {
+                const missile = missiles[i];
+                if (missile.state === 'idle') {
+                    missile.x += missile.side * 2;
+                    missile.idleTime -= 10;
+                    if (missile.idleTime <= 0) {
+                        missile.state = 'launch';
+                        missile.speed = missile.maxSpeed;
+                    }
+                } else {
+                    missile.y -= missile.speed;
+                }
+                missile.element.style.left = `${missile.x}px`;
+                missile.element.style.top = `${missile.y}px`;
+                
+                if (missile.y < -20) {
+                    gameContainer.removeChild(missile.element);
+                    missiles.splice(i, 1);
+                    continue;
+                }
+                
+                checkMissileCollision(i);
+            }
+            
+            // 移动陨石
+            for (let i = meteors.length - 1; i >= 0; i--) {
+                const meteor = meteors[i];
+                meteor.y += meteor.speed;
+                meteor.element.style.top = `${meteor.y}px`;
+                
+                if (meteor.y > gameContainer.clientHeight + 60 || (meteor.speed < 0 && meteor.y < -60)) {
+                    gameContainer.removeChild(meteor.element);
+                    meteors.splice(i, 1);
+                    continue;
+                }
+                
+                checkMeteorCollision(meteor);
+            }
+        }
+
+        // 飞船移动
+        function handlePlayerMove() {
+            if (!gameRunning) return;
+            
+            if ((keys.a || keys.ArrowLeft) && playerX > 0) {
+                playerX = Math.max(0, playerX - playerSpeed * 0.15);
+                player.style.left = `${playerX}px`;
+            }
+            if ((keys.d || keys.ArrowRight) && playerX < gameContainer.clientWidth - playerWidth) {
+                playerX = Math.min(gameContainer.clientWidth - playerWidth, playerX + playerSpeed * 0.15);
+                player.style.left = `${playerX}px`;
+            }
+        }
+
+        // 子弹碰撞检测（考虑陨石血量）
+        function checkBulletCollision(bulletIndex) {
+            const bullet = bullets[bulletIndex];
+            let hitCount = 0;
+            
+            for (let i = meteors.length - 1; i >= 0; i--) {
+                const meteor = meteors[i];
+                if (
+                    bullet.x < meteor.x + meteor.width &&
+                    bullet.x + 4 > meteor.x &&
+                    bullet.y < meteor.y + meteor.height &&
+                    bullet.y + 18 > meteor.y
+                ) {
+                    meteor.hp -= 1;
+                    hitCount++;
+                    
+                    if (meteor.hp <= 0) {
+                        gameContainer.removeChild(meteor.element);
+                        meteors.splice(i, 1);
+                        
+                        if (window.explodeBullet) {
+                            for (let j = meteors.length - 1; j >= 0; j--) {
+                                const m = meteors[j];
+                                const dx = m.x - meteor.x;
+                                const dy = m.y - meteor.y;
+                                if (Math.sqrt(dx*dx + dy*dy) < window.explodeRange) {
+                                    gameContainer.removeChild(m.element);
+                                    meteors.splice(j, 1);
+                                }
+                            }
+                        }
+                        
+                        if (window.meteorSplit) {
+                            for (let s = 0; s < window.splitCount; s++) {
+                                const smallMeteor = document.createElement('div');
+                                smallMeteor.className = 'meteor';
+                                smallMeteor.textContent = String.fromCharCode(Math.floor(Math.random() * 26) + 65);
+                                smallMeteor.style.left = `${meteor.x + (s - 1) * 15}px`;
+                                smallMeteor.style.top = `${meteor.y}px`;
+                                smallMeteor.style.fontSize = "30px";
+                                gameContainer.appendChild(smallMeteor);
+                                meteors.push({
+                                    element: smallMeteor,
+                                    x: meteor.x + (s - 1) * 15,
+                                    y: meteor.y,
+                                    speed: meteor.speed + 2,
+                                    width: 30,
+                                    height: 30,
+                                    hp: 1,
+                                    maxHp: 1
+                                });
+                            }
+                        }
+                    }
+                    
+                    if (!window.bulletPenetrate || hitCount >= window.penetrateMax) {
+                        gameContainer.removeChild(bullet.element);
+                        bullets.splice(bulletIndex, 1);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 导弹碰撞检测（伤害11）
+        function checkMissileCollision(missileIndex) {
+            const missile = missiles[missileIndex];
+            for (let i = meteors.length - 1; i >= 0; i--) {
+                const meteor = meteors[i];
+                if (
+                    missile.x < meteor.x + meteor.width &&
+                    missile.x + 20 > meteor.x &&
+                    missile.y < meteor.y + meteor.height &&
+                    missile.y + 20 > meteor.y
+                ) {
+                    meteor.hp -= missile.damage;
+                    
+                    if (meteor.hp <= 0) {
+                        gameContainer.removeChild(meteor.element);
+                        meteors.splice(i, 1);
+                        
+                        if (window.explodeBullet) {
+                            for (let j = meteors.length - 1; j >= 0; j--) {
+                                const m = meteors[j];
+                                const dx = m.x - meteor.x;
+                                const dy = m.y - meteor.y;
+                                if (Math.sqrt(dx*dx + dy*dy) < window.explodeRange) {
+                                    gameContainer.removeChild(m.element);
+                                    meteors.splice(j, 1);
+                                }
+                            }
+                        }
+                        
+                        if (window.meteorSplit) {
+                            for (let s = 0; s < window.splitCount; s++) {
+                                const smallMeteor = document.createElement('div');
+                                smallMeteor.className = 'meteor';
+                                smallMeteor.textContent = String.fromCharCode(Math.floor(Math.random() * 26) + 65);
+                                smallMeteor.style.left = `${meteor.x + (s - 1) * 15}px`;
+                                smallMeteor.style.top = `${meteor.y}px`;
+                                smallMeteor.style.fontSize = "30px";
+                                gameContainer.appendChild(smallMeteor);
+                                meteors.push({
+                                    element: smallMeteor,
+                                    x: meteor.x + (s - 1) * 15,
+                                    y: meteor.y,
+                                    speed: meteor.speed + 2,
+                                    width: 30,
+                                    height: 30,
+                                    hp: 1,
+                                    maxHp: 1
+                                });
+                            }
+                        }
+                    }
+                    
+                    gameContainer.removeChild(missile.element);
+                    missiles.splice(missileIndex, 1);
+                    break;
+                }
+            }
+        }
+
+        // 陨石碰撞检测
+        function checkMeteorCollision(meteor) {
+            if (
+                meteor.x < playerX + playerWidth &&
+                meteor.x + meteor.width > playerX &&
+                meteor.y < playerY + playerHeight &&
+                meteor.y + meteor.height > playerY
+            ) {
+                if (window.invincible) return;
+                
+                if (window.shieldCount > 0) {
+                    window.shieldCount -= 1;
+                    gameContainer.removeChild(meteor.element);
+                    meteors = meteors.filter(m => m !== meteor);
+                    return;
+                }
+                
+                gameOver();
+            }
+        }
+
+        // 游戏结束
+        function gameOver() {
+            gameRunning = false;
+            
+            clearInterval(distanceTimer);
+            clearInterval(meteorTimer);
+            clearInterval(moveTimer);
+            clearInterval(reloadTimer);
+            clearInterval(missileReloadTimer);
+            
+            if (currentDistance > maxDistance) {
+                maxDistance = currentDistance;
+                localStorage.setItem('planeGameMaxDistance', maxDistance);
+            }
+            
+            document.getElementById('go-name').textContent = playerName;
+            document.getElementById('go-distance').textContent = currentDistance;
+            document.getElementById('go-max-distance').textContent = maxDistance;
+            document.getElementById('go-talents').textContent = selectedTalents.join('、') || '无';
+            
+            gameOverPanel.style.display = "block";
+        }
+
+        // ========== 键盘控制 ==========
+        document.addEventListener('keydown', (e) => {
+            e.preventDefault();
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = true;
+            }
+            if (e.key === ' ') {
+                isFiring = true;
+            }
+            if (e.key === 'x' || e.key === 'X') {
+                isFiringMissile = true;
+            }
+            
+            if (!gameRunning) return;
+            
+            if (e.key === ' ' && currentAmmo > 0) {
+                fire();
+            }
+            if ((e.key === 'x' || e.key === 'X') && currentMissile > 0) {
+                fireMissile();
+            }
+        }, { passive: false });
+
+        document.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = false;
+            }
+            if (e.key === ' ') {
+                isFiring = false;
+            }
+            if (e.key === 'x' || e.key === 'X') {
+                isFiringMissile = false;
+            }
+        }, { passive: true });
+
+        // ========== 事件绑定 ==========
+        restartBtn.addEventListener('click', initGame);
+        window.onload = initGame;
+
+        window.addEventListener('resize', () => {
+            playerX = Math.min(playerX, gameContainer.clientWidth - playerWidth);
+            player.style.left = `${playerX}px`;
+        });
+
+        window.addEventListener('blur', () => {
+            for (let key in keys) {
+                keys[key] = false;
+            }
+            isFiring = false;
+            isFiringMissile = false;
+        });
+    </script>
+</body>
+</html>
