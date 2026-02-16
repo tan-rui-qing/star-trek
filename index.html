@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>star-trek</title>
+    <title>STAR-TIRK</title>
     <style>
         * {
             margin: 0;
@@ -46,8 +46,8 @@
 
         .bullet {
             position: absolute;
-            color: #fff;
-            font-size: 18px;
+            color: #ff4500;
+            font-size: 24px;
             user-select: none;
             z-index: 50;
             transform: translateZ(0);
@@ -143,6 +143,55 @@
         #restart-btn:hover {
             background: #444;
         }
+
+        /* 烟花爆炸特效 */
+        .firework {
+            position: absolute;
+            pointer-events: none;
+            z-index: 150;
+        }
+
+        .firework-particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: explode 0.8s ease-out forwards;
+        }
+
+        @keyframes explode {
+            0% {
+                transform: translate(0, 0) scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(var(--tx), var(--ty)) scale(0);
+                opacity: 0;
+            }
+        }
+
+        /* 马年祝福语 */
+        .wish-text {
+            position: absolute;
+            color: #ffd700;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 0 0 5px #ff4500;
+            pointer-events: none;
+            z-index: 160;
+            animation: floatUp 1.5s ease-out forwards;
+        }
+
+        @keyframes floatUp {
+            0% {
+                transform: translateY(0) scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-80px) scale(1.2);
+                opacity: 0;
+            }
+        }
     </style>
 </head>
 <body>
@@ -231,10 +280,10 @@
         let missileFireInterval = 300;
 
         // ========== 陨石系统核心变量 ==========
-        const meteorMinCount = 50;
-        const meteorMaxCount = 200;
+        const meteorMinCount = 30;
+        const meteorMaxCount = 100;
         const meteorMinSpeed = 5;
-        const meteorMaxSpeed = 20;
+        const meteorMaxSpeed = 10;
         const meteorMinHp = 1;
         const meteorMaxHp = 10;
 
@@ -348,7 +397,7 @@
             playerX = gameContainer.clientWidth / 2 - playerWidth / 2;
             player.style.left = `${playerX}px`;
             player.style.top = `${playerY}px`;
-            window.autoFire=false;
+            
             showTalentPanel();
         }
 
@@ -407,7 +456,6 @@
             window.splitCount = 2;
             window.shieldCount = 0;
             window.meteorSpawnDelay = 0;
-            window.autoFire = false;
             
             for (let key in keys) {
                 keys[key] = false;
@@ -620,7 +668,7 @@
                 
                 const bullet = document.createElement('div');
                 bullet.className = 'bullet';
-                bullet.textContent = '|';
+                bullet.textContent = '🧨';
                 bullet.style.left = `${bulletX}px`;
                 bullet.style.top = `${baseY}px`;
                 
@@ -653,7 +701,7 @@
             
             const missile = document.createElement('div');
             missile.className = 'missile';
-            missile.textContent = '☢';
+            missile.textContent = '▶';
             missile.style.left = `${missileX}px`;
             missile.style.top = `${missileY}px`;
             
@@ -670,6 +718,53 @@
             });
             
             gameContainer.appendChild(missile);
+        }
+
+        // 创建烟花爆炸特效和马年祝福语
+        function createFirework(x, y) {
+            // 烟花粒子颜色
+            const colors = ['#ff0000', '#ffd700', '#ff4500', '#00ff00', '#00bfff', '#ff1493'];
+            const particleCount = 12;
+            
+            // 创建烟花容器
+            const firework = document.createElement('div');
+            firework.className = 'firework';
+            firework.style.left = `${x}px`;
+            firework.style.top = `${y}px`;
+            gameContainer.appendChild(firework);
+            
+            // 生成粒子
+            for (let i = 0; i < particleCount; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'firework-particle';
+                particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                
+                // 计算粒子飞散的角度和距离
+                const angle = (i / particleCount) * Math.PI * 2;
+                const distance = 50 + Math.random() * 30;
+                const tx = Math.cos(angle) * distance;
+                const ty = Math.sin(angle) * distance;
+                
+                particle.style.setProperty('--tx', `${tx}px`);
+                particle.style.setProperty('--ty', `${ty}px`);
+                
+                firework.appendChild(particle);
+            }
+            
+            // 马年祝福语
+            const wishes = ['马到成功！', '龙马精神！', '一马当先！', '马年大吉！', '策马奔腾！'];
+            const wishText = document.createElement('div');
+            wishText.className = 'wish-text';
+            wishText.textContent = wishes[Math.floor(Math.random() * wishes.length)];
+            wishText.style.left = `${x - 40}px`;
+            wishText.style.top = `${y - 20}px`;
+            gameContainer.appendChild(wishText);
+            
+            // 移除元素，避免内存泄漏
+            setTimeout(() => {
+                gameContainer.removeChild(firework);
+                gameContainer.removeChild(wishText);
+            }, 1500);
         }
 
         function moveObjects() {
@@ -782,6 +877,9 @@
                         gameContainer.removeChild(meteor.element);
                         meteors.splice(i, 1);
                         
+                        // 创建烟花特效
+                        createFirework(meteor.x + meteor.width / 2, meteor.y + meteor.height / 2);
+                        
                         if (window.explodeBullet) {
                             for (let j = meteors.length - 1; j >= 0; j--) {
                                 const m = meteors[j];
@@ -790,6 +888,8 @@
                                 if (Math.sqrt(dx*dx + dy*dy) < window.explodeRange) {
                                     gameContainer.removeChild(m.element);
                                     meteors.splice(j, 1);
+                                    // 为连锁爆炸也创建烟花
+                                    createFirework(m.x + m.width / 2, m.y + m.height / 2);
                                 }
                             }
                         }
@@ -843,6 +943,9 @@
                         gameContainer.removeChild(meteor.element);
                         meteors.splice(i, 1);
                         
+                        // 创建烟花特效
+                        createFirework(meteor.x + meteor.width / 2, meteor.y + meteor.height / 2);
+                        
                         if (window.explodeBullet) {
                             for (let j = meteors.length - 1; j >= 0; j--) {
                                 const m = meteors[j];
@@ -851,6 +954,8 @@
                                 if (Math.sqrt(dx*dx + dy*dy) < window.explodeRange) {
                                     gameContainer.removeChild(m.element);
                                     meteors.splice(j, 1);
+                                    // 为连锁爆炸也创建烟花
+                                    createFirework(m.x + m.width / 2, m.y + m.height / 2);
                                 }
                             }
                         }
